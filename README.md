@@ -60,7 +60,7 @@ When unset, allowlist + IP checks still run; Safe Browsing is simply skipped.
 
 ## Allowlist
 
-Default hosts: `example.com`, `www.example.com`, `httpbin.org`.
+Default hosts: `example.com`, `www.example.com`, `httpbin.org`, `google.com`, `bing.com`.
 
 Override:
 
@@ -91,6 +91,7 @@ These should **fail** (blocked by policy):
 - `http://127.0.0.1/`
 - `http://169.254.169.254/`
 - `http://db/` or any Docker-internal hostname not on the allowlist
+- `http://gitstub/` from the curl app (private address on `mock-vpn`)
 - A random public host not listed in `URL_ALLOWLIST`
 
 ## Project layout

@@ -102,7 +102,7 @@
   <main>
     <h1>Secure Web cURL</h1>
     <p class="lede">
-      Fetches allowlisted public URLs only. Private, loopback, link-local, and
+      Fetches public http(s) URLs. Private, loopback, link-local, and
       metadata addresses are blocked before the request is sent.
     </p>
 
@@ -118,12 +118,6 @@
     </form>
 
     <div class="meta">
-      <p><strong>Allowlist:</strong></p>
-      <ul>
-        {% for host in allowlist %}
-        <li><code>{{ host }}</code></li>
-        {% endfor %}
-      </ul>
       <p>
         Safe Browsing:
         {% if safe_browsing_enabled %}
