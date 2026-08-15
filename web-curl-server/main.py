@@ -16,14 +16,6 @@ from fastapi.templating import Jinja2Templates
 app = FastAPI(title="Secure Web cURL")
 templates = Jinja2Templates(directory="templates")
 
-# Comma-separated hostnames allowed for fetch (override via env).
-DEFAULT_ALLOWLIST = "example.com,www.example.com,httpbin.org"
-ALLOWLIST = {
-    h.strip().lower()
-    for h in os.getenv("URL_ALLOWLIST", DEFAULT_ALLOWLIST).split(",")
-    if h.strip()
-}
-
 SAFE_BROWSING_API_KEY = os.getenv("SAFE_BROWSING_API_KEY", "").strip()
 REQUEST_TIMEOUT = float(os.getenv("FETCH_TIMEOUT_SECONDS", "8"))
 MAX_RESPONSE_BYTES = int(os.getenv("MAX_RESPONSE_BYTES", "65536"))
@@ -87,20 +79,13 @@ def _validate_url(url: str) -> str:
         raise FetchDenied("Only ports 80 and 443 are allowed")
 
     host = parsed.hostname.lower().rstrip(".")
-    # Literal IPs are never allowlisted for this demo
     try:
         ip = ipaddress.ip_address(host)
         if _is_blocked_ip(ip):
             raise FetchDenied(f"Blocked IP address: {host}")
-        raise FetchDenied("Literal IP addresses are not allowed; use an allowlisted hostname")
+        raise FetchDenied("Literal IP addresses are not allowed; use a hostname")
     except ValueError:
         pass
-
-    if host not in ALLOWLIST:
-        raise FetchDenied(
-            f"Host {host!r} is not on the allowlist. "
-            f"Allowed: {', '.join(sorted(ALLOWLIST))}"
-        )
 
     _resolve_and_validate_host(host)
     return host
@@ -111,10 +96,8 @@ def _safe_browsing_check(url: str) -> Optional[str]:
     if not SAFE_BROWSING_API_KEY:
         return None
 
-    endpoint = (
-        "https://safebrowsing.googleapis.com/v4/threatMatches:find"
-        f"?key={SAFE_BROWSING_API_KEY}"
-    )
+    endpoint = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+    headers = {"x-goog-api-key": SAFE_BROWSING_API_KEY}
     body = {
         "client": {"clientId": "ssrf-demo-secure-curl", "clientVersion": "1.0.0"},
         "threatInfo": {
@@ -130,9 +113,22 @@ def _safe_browsing_check(url: str) -> Optional[str]:
         },
     }
     try:
-        resp = requests.post(endpoint, json=body, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
+        resp = requests.post(
+            endpoint, json=body, headers=headers, timeout=REQUEST_TIMEOUT
+        )
+        if not resp.ok:
+            detail = resp.text.strip()
+            try:
+                err = resp.json().get("error") or {}
+                detail = err.get("message") or detail
+            except ValueError:
+                pass
+            raise FetchDenied(
+                f"Safe Browsing check failed: HTTP {resp.status_code} {detail}"
+            )
         data = resp.json()
+    except FetchDenied:
+        raise
     except requests.RequestException as exc:
         raise FetchDenied(f"Safe Browsing check failed: {exc}") from exc
 
@@ -168,6 +164,11 @@ def safe_fetch(url: str) -> dict:
                         raise FetchDenied("Redirect without Location header")
                     next_url = urljoin(current, location)
                     host = _validate_url(next_url)
+                    threat = _safe_browsing_check(next_url)
+                    if threat:
+                        raise FetchDenied(
+                            f"Safe Browsing blocked this URL ({threat})"
+                        )
                     current = next_url
                     continue
 
@@ -198,7 +199,6 @@ async def index(request: Request):
         request,
         "index.html",
         {
-            "allowlist": sorted(ALLOWLIST),
             "safe_browsing_enabled": bool(SAFE_BROWSING_API_KEY),
             "result": None,
             "error": None,
@@ -223,7 +223,6 @@ async def fetch(request: Request, url: str = Form(...)):
         request,
         "index.html",
         {
-            "allowlist": sorted(ALLOWLIST),
             "safe_browsing_enabled": bool(SAFE_BROWSING_API_KEY),
             "result": result,
             "error": error,
@@ -236,6 +235,5 @@ async def fetch(request: Request, url: str = Form(...)):
 async def health():
     return {
         "status": "ok",
-        "allowlist_size": len(ALLOWLIST),
         "safe_browsing_enabled": bool(SAFE_BROWSING_API_KEY),
     }

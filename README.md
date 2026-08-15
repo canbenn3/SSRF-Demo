@@ -32,7 +32,7 @@ docker compose up --build
 Open:
 
 - http://ctf.localhost — complete CTFd setup wizard on first visit
-- http://curl.localhost — try fetching an allowlisted URL
+- http://curl.localhost — try fetching a public URL
 
 `*.localhost` resolves to `127.0.0.1` on most systems. If it does not, add to
 `/etc/hosts`:
@@ -56,28 +56,16 @@ Or put it in a `.env` file next to `docker-compose.yml`:
 SAFE_BROWSING_API_KEY=your-key-here
 ```
 
-When unset, allowlist + IP checks still run; Safe Browsing is simply skipped.
-
-## Allowlist
-
-Default hosts: `example.com`, `www.example.com`, `httpbin.org`.
-
-Override:
-
-```bash
-export URL_ALLOWLIST="example.com,httpbin.org"
-docker compose up --build
-```
+When unset, scheme/port/IP checks still run; Safe Browsing is simply skipped.
 
 ## What the curl app blocks
 
 Before any outbound `GET`:
 
 1. Scheme must be `http`/`https`; ports limited to 80/443
-2. Hostname must be on `URL_ALLOWLIST` (literal IPs rejected)
-3. DNS results must not be private, loopback, link-local, multicast, or metadata ranges
-4. Optional Google Safe Browsing threat check
-5. Redirects are re-validated the same way; auth headers are never forwarded
+2. Literal IP addresses are rejected; hostname DNS results must not be private, loopback, link-local, multicast, or metadata ranges
+3. Optional Google Safe Browsing threat check
+4. Redirects are re-validated the same way; auth headers are never forwarded
 
 ## Smoke tests (defensive)
 
@@ -90,8 +78,8 @@ These should **fail** (blocked by policy):
 
 - `http://127.0.0.1/`
 - `http://169.254.169.254/`
-- `http://db/` or any Docker-internal hostname not on the allowlist
-- A random public host not listed in `URL_ALLOWLIST`
+- `http://db/` or any Docker-internal hostname (private DNS result)
+- `http://gitstub/` from the curl app (private address on `mock-vpn`)
 
 ## Project layout
 
