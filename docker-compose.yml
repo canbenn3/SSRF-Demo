@@ -73,6 +73,7 @@ services:
     networks:
       - net_curl
       - net_webproxy
+      - mock-vpn
     labels:
       - traefik.enable=true
       - traefik.docker.network=net_webproxy
@@ -93,6 +94,12 @@ services:
       - traefik.http.routers.mock.entrypoints=web
       - traefik.http.services.mock.loadbalancer.server.port=80
 
+  gitstub:
+    build: ./gitstub
+    restart: unless-stopped
+    networks:
+      - mock-vpn
+
 networks:
   # Explicit names so Traefik labels match (Compose would otherwise prefix them)
   net_webproxy:
@@ -107,6 +114,10 @@ networks:
   net_mock:
     name: net_mock
     driver: bridge
+  mock-vpn:
+    name: mock-vpn
+    driver: bridge
+    internal: true
 
 volumes:
   ctfd_data:
