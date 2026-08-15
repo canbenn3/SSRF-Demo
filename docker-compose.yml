@@ -11,6 +11,9 @@ services:
       - ./traefik/tra.yml:/etc/traefik/traefik.yml:ro
     networks:
       - net_webproxy
+      - net_curl
+      - net_mock
+      - net_ctfd_proxy
 
   ctfd:
     image: ctfd/ctfd:3.7.5
@@ -28,10 +31,10 @@ services:
       - cache
     networks:
       - net_ctfd
-      - net_webproxy
+      - net_ctfd_proxy
     labels:
       - traefik.enable=true
-      - traefik.docker.network=net_webproxy
+      - traefik.docker.network=net_ctfd_proxy
       - traefik.http.routers.ctfd.rule=Host(`ctf.localhost`)
       - traefik.http.routers.ctfd.entrypoints=web
       - traefik.http.services.ctfd.loadbalancer.server.port=8000
@@ -72,11 +75,10 @@ services:
       MAX_RESPONSE_BYTES: "65536"
     networks:
       - net_curl
-      - net_webproxy
       - mock-vpn
     labels:
       - traefik.enable=true
-      - traefik.docker.network=net_webproxy
+      - traefik.docker.network=net_curl
       - traefik.http.routers.curl.rule=Host(`curl.localhost`)
       - traefik.http.routers.curl.entrypoints=web
       - traefik.http.services.curl.loadbalancer.server.port=80
@@ -86,10 +88,9 @@ services:
     restart: unless-stopped
     networks:
       - net_mock
-      - net_webproxy
     labels:
       - traefik.enable=true
-      - traefik.docker.network=net_webproxy
+      - traefik.docker.network=net_mock
       - traefik.http.routers.mock.rule=Host(`mock.localhost`)
       - traefik.http.routers.mock.entrypoints=web
       - traefik.http.services.mock.loadbalancer.server.port=80
@@ -113,6 +114,9 @@ networks:
     driver: bridge
   net_mock:
     name: net_mock
+    driver: bridge
+  net_ctfd_proxy:
+    name: net_ctfd_proxy
     driver: bridge
   mock-vpn:
     name: mock-vpn

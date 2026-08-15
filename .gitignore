@@ -2,3 +2,5 @@
 .env
 
 scratch/
+.pytest_cache/
+__pycache__/
