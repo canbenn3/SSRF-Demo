@@ -70,9 +70,24 @@ services:
     environment:
       # Optional: Google Safe Browsing API key for extra pre-flight checks
       SAFE_BROWSING_API_KEY: ${SAFE_BROWSING_API_KEY:-}
-      URL_ALLOWLIST: ${URL_ALLOWLIST:-example.com,www.example.com,httpbin.org}
+      # Optional: set URL_ALLOWLIST to override DEFAULT_ALLOWLIST in main.py
+      URL_ALLOWLIST: ${URL_ALLOWLIST:-}
       FETCH_TIMEOUT_SECONDS: "8"
       MAX_RESPONSE_BYTES: "65536"
+    volumes:
+      - ./web-curl-server:/app
+    command:
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "80"
+      - --reload
+      - --reload-dir
+      - /app
+      - --reload-include
+      - "*.html"
     networks:
       - net_curl
       - mock-vpn
@@ -86,6 +101,20 @@ services:
   mock-website:
     build: ./mock-website
     restart: unless-stopped
+    volumes:
+      - ./mock-website:/app
+    command:
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "80"
+      - --reload
+      - --reload-dir
+      - /app
+      - --reload-include
+      - "*.html"
     networks:
       - net_mock
     labels:
@@ -98,6 +127,20 @@ services:
   gitstub:
     build: ./gitstub
     restart: unless-stopped
+    volumes:
+      - ./gitstub:/app
+    command:
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "80"
+      - --reload
+      - --reload-dir
+      - /app
+      - --reload-include
+      - "*.html"
     networks:
       - mock-vpn
 
