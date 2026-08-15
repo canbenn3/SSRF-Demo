@@ -1,0 +1,113 @@
+services:
+  traefik:
+    # v3.6.1+ auto-negotiates Docker API (needed for Docker Engine 29+)
+    image: traefik:v3.6.1
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "8080:8080" # dashboard (insecure; local demo only)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/tra.yml:/etc/traefik/traefik.yml:ro
+    networks:
+      - net_webproxy
+
+  ctfd:
+    image: ctfd/ctfd:3.7.5
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: change-me-local-demo-only
+      DATABASE_URL: mysql+pymysql://ctfd:ctfd@db/ctfd
+      REDIS_URL: redis://cache:6379
+      UPLOAD_FOLDER: /var/uploads
+      REVERSE_PROXY: "true"
+    volumes:
+      - ctfd_data:/var/uploads
+    depends_on:
+      - db
+      - cache
+    networks:
+      - net_ctfd
+      - net_webproxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=net_webproxy
+      - traefik.http.routers.ctfd.rule=Host(`ctf.localhost`)
+      - traefik.http.routers.ctfd.entrypoints=web
+      - traefik.http.services.ctfd.loadbalancer.server.port=8000
+
+  db:
+    image: mariadb:10.11
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ctfd
+      MYSQL_USER: ctfd
+      MYSQL_PASSWORD: ctfd
+      MYSQL_DATABASE: ctfd
+    volumes:
+      - ctfd_mysql:/var/lib/mysql
+    networks:
+      - net_ctfd
+    command:
+      - mysqld
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --wait_timeout=28800
+      - --log-warnings=0
+
+  cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - net_ctfd
+
+  web-curl-server:
+    build: ./web-curl-server
+    restart: unless-stopped
+    environment:
+      # Optional: Google Safe Browsing API key for extra pre-flight checks
+      SAFE_BROWSING_API_KEY: ${SAFE_BROWSING_API_KEY:-}
+      URL_ALLOWLIST: ${URL_ALLOWLIST:-example.com,www.example.com,httpbin.org}
+      FETCH_TIMEOUT_SECONDS: "8"
+      MAX_RESPONSE_BYTES: "65536"
+    networks:
+      - net_curl
+      - net_webproxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=net_webproxy
+      - traefik.http.routers.curl.rule=Host(`curl.localhost`)
+      - traefik.http.routers.curl.entrypoints=web
+      - traefik.http.services.curl.loadbalancer.server.port=80
+
+  mock-website:
+    build: ./mock-website
+    restart: unless-stopped
+    networks:
+      - net_mock
+      - net_webproxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=net_webproxy
+      - traefik.http.routers.mock.rule=Host(`mock.localhost`)
+      - traefik.http.routers.mock.entrypoints=web
+      - traefik.http.services.mock.loadbalancer.server.port=80
+
+networks:
+  # Explicit names so Traefik labels match (Compose would otherwise prefix them)
+  net_webproxy:
+    name: net_webproxy
+    driver: bridge
+  net_ctfd:
+    name: net_ctfd
+    driver: bridge
+  net_curl:
+    name: net_curl
+    driver: bridge
+  net_mock:
+    name: net_mock
+    driver: bridge
+
+volumes:
+  ctfd_data:
+  ctfd_mysql:
