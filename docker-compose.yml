@@ -73,6 +73,7 @@ services:
       ADULT_FILTER: ${ADULT_FILTER:-1}
       ADULT_DOMAINS: ${ADULT_DOMAINS:-}
       ADULT_PATHS: ${ADULT_PATHS:-}
+      WHITELISTED_IP_RANGES: ${WHITELISTED_IP_RANGES:-}
       FETCH_TIMEOUT_SECONDS: "8"
       MAX_RESPONSE_BYTES: "65536"
     volumes:
@@ -126,6 +127,7 @@ services:
       - traefik.http.services.mock.loadbalancer.server.port=80
 
   gitstub:
+    container_name: Gitstub
     build: ./gitstub
     restart: unless-stopped
     volumes:

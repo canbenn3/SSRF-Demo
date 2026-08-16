@@ -30,13 +30,51 @@ MAX_RESPONSE_BYTES = int(os.getenv("MAX_RESPONSE_BYTES", "65536"))
 MAX_REDIRECTS = 3
 
 
+def _csv_env(name: str) -> frozenset[str]:
+    raw = os.getenv(name, "")
+    return frozenset(
+        part.strip().lower().lstrip(".") for part in raw.split(",") if part.strip()
+    )
+
+
+def _whitelisted_ip_networks() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for token in _csv_env("WHITELISTED_IP_RANGES"):
+        try:
+            networks.append(ipaddress.ip_network(token, strict=False))
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Invalid CIDR in WHITELISTED_IP_RANGES: {token!r}"
+            ) from exc
+    return tuple(networks)
+
+
+WHITELISTED_IP_NETWORKS = _whitelisted_ip_networks()
+
+
 class FetchDenied(Exception):
     def __init__(self, reason: str) -> None:
         self.reason = reason
         super().__init__(reason)
 
 
+def _canonical_ip(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    return ip
+
+
+def _is_whitelisted_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    ip = _canonical_ip(ip)
+    return any(ip in network for network in WHITELISTED_IP_NETWORKS)
+
+
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    ip = _canonical_ip(ip)
+    if _is_whitelisted_ip(ip):
+        return False
     return any(
         (
             ip.is_private,
@@ -45,7 +83,8 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
             ip.is_multicast,
             ip.is_reserved,
             ip.is_unspecified,
-            # Cloud metadata / special-use ranges commonly abused in SSRF
+            # Cloud metadata / CGNAT / special-use ranges commonly abused in SSRF
+            ip in ipaddress.ip_network("100.64.0.0/10"),
             ip in ipaddress.ip_network("169.254.0.0/16"),
             ip in ipaddress.ip_network("::1/128"),
             ip in ipaddress.ip_network("fc00::/7"),
@@ -91,18 +130,16 @@ def _parse_url(url: str) -> str:
         ip = ipaddress.ip_address(host)
         if _is_blocked_ip(ip):
             raise FetchDenied(f"Blocked IP address: {host}")
-        raise FetchDenied("Literal IP addresses are not allowed; use a hostname")
+        return str(ip)
     except ValueError:
         pass
     return host
 
 
 def _adult_content_check(url: str) -> None:
-    print("Adult Filtered Enabled:", ADULT_FILTER_ENABLED)
     if not ADULT_FILTER_ENABLED:
         return
     reason = adult_content_reason(url, timeout=REQUEST_TIMEOUT)
-    print("reason?", reason)
     if reason:
         raise FetchDenied(reason)
 
@@ -156,11 +193,9 @@ def _safe_browsing_check(url: str) -> Optional[str]:
 
 
 def safe_fetch(url: str) -> dict:
-    print("fetching safe URL?")
     current = url
     host = _parse_url(current)
     t = _adult_content_check(current)
-    print("was error?", t)
     _resolve_and_validate_host(host)
 
     threat = _safe_browsing_check(current)
@@ -171,6 +206,7 @@ def safe_fetch(url: str) -> dict:
 
     try:
         for _ in range(MAX_REDIRECTS + 1):
+            print("URL: ", current)
             with requests.get(
                 current,
                 timeout=REQUEST_TIMEOUT,

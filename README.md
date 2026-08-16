@@ -63,7 +63,7 @@ When unset, scheme/port/IP checks still run; Safe Browsing is simply skipped.
 Before any outbound `GET`:
 
 1. Scheme must be `http`/`https`; ports limited to 80/443
-2. Literal IP addresses are rejected; hostname DNS results must not be private, loopback, link-local, multicast, or metadata ranges
+2. Literal IPs and hostname DNS results must not be private, loopback, link-local, multicast, CGNAT, or metadata ranges, unless the address is in `WHITELISTED_IP_RANGES`
 3. Adult-content filter (Cloudflare family DNS + domain/path heuristics)
 4. Optional Google Safe Browsing threat check
 5. Redirects are re-validated the same way; auth headers are never forwarded
