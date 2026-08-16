@@ -64,8 +64,9 @@ Before any outbound `GET`:
 
 1. Scheme must be `http`/`https`; ports limited to 80/443
 2. Literal IP addresses are rejected; hostname DNS results must not be private, loopback, link-local, multicast, or metadata ranges
-3. Optional Google Safe Browsing threat check
-4. Redirects are re-validated the same way; auth headers are never forwarded
+3. Adult-content filter (Cloudflare family DNS + domain/path heuristics)
+4. Optional Google Safe Browsing threat check
+5. Redirects are re-validated the same way; auth headers are never forwarded
 
 ## Smoke tests (defensive)
 

@@ -13,10 +13,18 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from adult_filter import adult_content_reason
+
 app = FastAPI(title="Secure Web cURL")
 templates = Jinja2Templates(directory="templates")
 
 SAFE_BROWSING_API_KEY = os.getenv("SAFE_BROWSING_API_KEY", "").strip()
+ADULT_FILTER_ENABLED = os.getenv("ADULT_FILTER", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
 REQUEST_TIMEOUT = float(os.getenv("FETCH_TIMEOUT_SECONDS", "8"))
 MAX_RESPONSE_BYTES = int(os.getenv("MAX_RESPONSE_BYTES", "65536"))
 MAX_REDIRECTS = 3
@@ -67,7 +75,7 @@ def _resolve_and_validate_host(hostname: str) -> list[str]:
     return resolved
 
 
-def _validate_url(url: str) -> str:
+def _parse_url(url: str) -> str:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise FetchDenied("Only http and https URLs are allowed")
@@ -86,9 +94,17 @@ def _validate_url(url: str) -> str:
         raise FetchDenied("Literal IP addresses are not allowed; use a hostname")
     except ValueError:
         pass
-
-    _resolve_and_validate_host(host)
     return host
+
+
+def _adult_content_check(url: str) -> None:
+    print("Adult Filtered Enabled:", ADULT_FILTER_ENABLED)
+    if not ADULT_FILTER_ENABLED:
+        return
+    reason = adult_content_reason(url, timeout=REQUEST_TIMEOUT)
+    print("reason?", reason)
+    if reason:
+        raise FetchDenied(reason)
 
 
 def _safe_browsing_check(url: str) -> Optional[str]:
@@ -140,8 +156,12 @@ def _safe_browsing_check(url: str) -> Optional[str]:
 
 
 def safe_fetch(url: str) -> dict:
+    print("fetching safe URL?")
     current = url
-    host = _validate_url(current)
+    host = _parse_url(current)
+    t = _adult_content_check(current)
+    print("was error?", t)
+    _resolve_and_validate_host(host)
 
     threat = _safe_browsing_check(current)
     if threat:
@@ -163,7 +183,9 @@ def safe_fetch(url: str) -> dict:
                     if not location:
                         raise FetchDenied("Redirect without Location header")
                     next_url = urljoin(current, location)
-                    host = _validate_url(next_url)
+                    host = _parse_url(next_url)
+                    _adult_content_check(next_url)
+                    _resolve_and_validate_host(host)
                     threat = _safe_browsing_check(next_url)
                     if threat:
                         raise FetchDenied(
