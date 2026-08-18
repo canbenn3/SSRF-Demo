@@ -27,15 +27,17 @@ services:
     volumes:
       - ctfd_data:/var/uploads
     depends_on:
-      - db
-      - cache
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
     networks:
       - net_ctfd
       - net_ctfd_proxy
     labels:
       - traefik.enable=true
       - traefik.docker.network=net_ctfd_proxy
-      - traefik.http.routers.ctfd.rule=Host(`ctf.localhost`)
+      - traefik.http.routers.ctfd.rule=Host(`${CTF_DOMAIN}`)
       - traefik.http.routers.ctfd.entrypoints=web
       - traefik.http.services.ctfd.loadbalancer.server.port=8000
 
@@ -57,12 +59,23 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --wait_timeout=28800
       - --log-warnings=0
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   cache:
     image: redis:7-alpine
     restart: unless-stopped
     networks:
       - net_ctfd
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   web-curl-server:
     build: ./web-curl-server
@@ -96,7 +109,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=net_curl
-      - traefik.http.routers.curl.rule=Host(`curl.localhost`)
+      - traefik.http.routers.curl.rule=Host(`${WEB_CURL_DOMAIN}`)
       - traefik.http.routers.curl.entrypoints=web
       - traefik.http.services.curl.loadbalancer.server.port=80
 
@@ -122,7 +135,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=net_mock
-      - traefik.http.routers.mock.rule=Host(`mock.localhost`)
+      - traefik.http.routers.mock.rule=Host(`${MOCK_WEBSITE_DOMAIN}`)
       - traefik.http.routers.mock.entrypoints=web
       - traefik.http.services.mock.loadbalancer.server.port=80
 
@@ -152,22 +165,40 @@ networks:
   net_webproxy:
     name: net_webproxy
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.5.0/24
   net_ctfd:
     name: net_ctfd
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.6.0/24
   net_curl:
     name: net_curl
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.7.0/24
   net_mock:
     name: net_mock
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.8.0/24
   net_ctfd_proxy:
     name: net_ctfd_proxy
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.9.0/24
   mock-vpn:
     name: mock-vpn
     driver: bridge
     internal: true
+    ipam:
+      config:
+        - subnet: 172.28.10.0/24
 
 volumes:
   ctfd_data:
