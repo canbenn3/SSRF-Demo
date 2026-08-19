@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import ipaddress
 import os
 import socket
@@ -10,7 +12,7 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from adult_filter import adult_content_reason
@@ -19,6 +21,9 @@ app = FastAPI(title="Secure Web cURL")
 templates = Jinja2Templates(directory="templates")
 
 SAFE_BROWSING_API_KEY = os.getenv("SAFE_BROWSING_API_KEY", "").strip()
+WEB_CURL_TOKEN = os.getenv("WEB_CURL_TOKEN", "").strip()
+SESSION_COOKIE = "web_curl_session"
+SESSION_MAX_AGE = 60 * 60 * 24 * 7
 ADULT_FILTER_ENABLED = os.getenv("ADULT_FILTER", "1").strip().lower() not in {
     "0",
     "false",
@@ -50,6 +55,50 @@ def _whitelisted_ip_networks() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Ne
 
 
 WHITELISTED_IP_NETWORKS = _whitelisted_ip_networks()
+
+
+def _token_matches(submitted: str) -> bool:
+    if not WEB_CURL_TOKEN or not submitted:
+        return False
+    left = hashlib.sha256(submitted.encode("utf-8")).digest()
+    right = hashlib.sha256(WEB_CURL_TOKEN.encode("utf-8")).digest()
+    return hmac.compare_digest(left, right)
+
+
+def _session_cookie_value() -> str:
+    return hmac.new(
+        WEB_CURL_TOKEN.encode("utf-8"),
+        b"web-curl-session",
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _is_authenticated(request: Request) -> bool:
+    if not WEB_CURL_TOKEN:
+        return False
+    auth = request.headers.get("authorization") or ""
+    scheme, _, cred = auth.partition(" ")
+    if scheme.lower() == "bearer" and _token_matches(cred.strip()):
+        return True
+    cookie = request.cookies.get(SESSION_COOKIE, "")
+    expected = _session_cookie_value()
+    if len(cookie) != len(expected):
+        return False
+    return hmac.compare_digest(cookie, expected)
+
+
+def _page_ctx(request: Request, **extra):
+    ctx = {
+        "authenticated": _is_authenticated(request),
+        "safe_browsing_enabled": bool(SAFE_BROWSING_API_KEY),
+        "token_configured": bool(WEB_CURL_TOKEN),
+        "result": None,
+        "error": None,
+        "url": "",
+        "auth_error": None,
+    }
+    ctx.update(extra)
+    return ctx
 
 
 class FetchDenied(Exception):
@@ -256,17 +305,54 @@ async def index(request: Request):
     return templates.TemplateResponse(
         request,
         "index.html",
-        {
-            "safe_browsing_enabled": bool(SAFE_BROWSING_API_KEY),
-            "result": None,
-            "error": None,
-            "url": "",
-        },
+        _page_ctx(request),
     )
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login(request: Request, token: str = Form("")):
+    token = token.strip()
+    if not WEB_CURL_TOKEN:
+        return templates.TemplateResponse(
+            request,
+            "index.html",
+            _page_ctx(request, auth_error="Access token is not configured"),
+            status_code=503,
+        )
+    if not _token_matches(token):
+        return templates.TemplateResponse(
+            request,
+            "index.html",
+            _page_ctx(request, auth_error="Invalid token"),
+            status_code=401,
+        )
+    response = RedirectResponse("/", status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE,
+        _session_cookie_value(),
+        httponly=True,
+        samesite="lax",
+        max_age=SESSION_MAX_AGE,
+    )
+    return response
+
+
+@app.post("/logout")
+async def logout():
+    response = RedirectResponse("/", status_code=303)
+    response.delete_cookie(SESSION_COOKIE)
+    return response
 
 
 @app.post("/fetch", response_class=HTMLResponse)
 async def fetch(request: Request, url: str = Form(...)):
+    if not _is_authenticated(request):
+        return templates.TemplateResponse(
+            request,
+            "index.html",
+            _page_ctx(request, auth_error="Authentication required"),
+            status_code=401,
+        )
     url = url.strip()
     result = None
     error = None
@@ -280,12 +366,7 @@ async def fetch(request: Request, url: str = Form(...)):
     return templates.TemplateResponse(
         request,
         "index.html",
-        {
-            "safe_browsing_enabled": bool(SAFE_BROWSING_API_KEY),
-            "result": result,
-            "error": error,
-            "url": url,
-        },
+        _page_ctx(request, result=result, error=error, url=url),
     )
 
 

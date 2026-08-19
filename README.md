@@ -32,7 +32,7 @@ docker compose up --build
 Open:
 
 - http://ctf.localhost — complete CTFd setup wizard on first visit
-- http://curl.localhost — try fetching a public URL
+- http://curl.localhost — enter `WEB_CURL_TOKEN`, then fetch a public URL
 
 `*.localhost` resolves to `127.0.0.1` on most systems. If it does not, add to
 `/etc/hosts`:
@@ -57,6 +57,12 @@ SAFE_BROWSING_API_KEY=your-key-here
 ```
 
 When unset, scheme/port/IP checks still run; Safe Browsing is simply skipped.
+
+## Web cURL access token
+
+Set `WEB_CURL_TOKEN` in `.env`. The fetch UI stays locked until that token is
+entered. You can also send `Authorization: Bearer <token>`. Recreate
+`web-curl-server` after changing it.
 
 ## What the curl app blocks
 

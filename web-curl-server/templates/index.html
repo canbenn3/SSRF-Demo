@@ -49,7 +49,8 @@
       flex-wrap: wrap;
       margin-bottom: 1.25rem;
     }
-    input[type="url"] {
+    input[type="url"],
+    input[type="password"] {
       flex: 1 1 280px;
       padding: 0.75rem 0.9rem;
       border: 1px solid var(--border);
@@ -106,6 +107,30 @@
       metadata addresses are blocked before the request is sent.
     </p>
 
+    {% if not authenticated %}
+    <p class="lede">Enter an access token to continue.</p>
+    <form method="post" action="/login">
+      <input
+        type="password"
+        name="token"
+        placeholder="Access token"
+        autocomplete="current-password"
+        required
+      />
+      <button type="submit">Unlock</button>
+    </form>
+    {% if auth_error %}
+    <div class="panel">
+      <p class="error"><strong>Access denied:</strong> {{ auth_error }}</p>
+    </div>
+    {% endif %}
+    {% if not token_configured %}
+    <div class="panel">
+      <p class="error">Set <code>WEB_CURL_TOKEN</code> in <code>.env</code> and recreate the container.</p>
+    </div>
+    {% endif %}
+    {% else %}
+
     <form method="post" action="/fetch">
       <input
         type="url"
@@ -144,6 +169,11 @@
       {% endif %}
       <pre>{{ result.body }}</pre>
     </div>
+    {% endif %}
+
+    <form method="post" action="/logout">
+      <button type="submit">Lock</button>
+    </form>
     {% endif %}
   </main>
 </body>
