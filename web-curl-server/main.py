@@ -22,6 +22,8 @@ templates = Jinja2Templates(directory="templates")
 
 SAFE_BROWSING_API_KEY = os.getenv("SAFE_BROWSING_API_KEY", "").strip()
 WEB_CURL_TOKEN = os.getenv("WEB_CURL_TOKEN", "").strip()
+MOCK_FLAG_TOKEN = os.getenv("MOCK_FLAG_TOKEN", "").strip()
+MOCK_WEBSITE_DOMAIN = os.getenv("MOCK_WEBSITE_DOMAIN", "").strip().lower().split(":")[0]
 SESSION_COOKIE = "web_curl_session"
 SESSION_MAX_AGE = 60 * 60 * 24 * 7
 ADULT_FILTER_ENABLED = os.getenv("ADULT_FILTER", "1").strip().lower() not in {
@@ -241,6 +243,34 @@ def _safe_browsing_check(url: str) -> Optional[str]:
     return None
 
 
+def _flag_inject_hosts() -> set[str]:
+    hosts = {"mock-website"}
+    if MOCK_WEBSITE_DOMAIN:
+        hosts.add(MOCK_WEBSITE_DOMAIN.rstrip("."))
+    return hosts
+
+
+def _should_inject_flag_token(url: str) -> bool:
+    if not MOCK_FLAG_TOKEN:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    path = (parsed.path or "/").rstrip("/") or "/"
+    return path == "/flag" and host in _flag_inject_hosts()
+
+
+def _upstream_request(url: str, headers: dict):
+    kwargs = {
+        "timeout": REQUEST_TIMEOUT,
+        "allow_redirects": False,
+        "stream": True,
+        "headers": headers,
+    }
+    if _should_inject_flag_token(url):
+        return requests.post(url, json={"token": MOCK_FLAG_TOKEN}, **kwargs)
+    return requests.get(url, **kwargs)
+
+
 def safe_fetch(url: str) -> dict:
     current = url
     host = _parse_url(current)
@@ -256,13 +286,7 @@ def safe_fetch(url: str) -> dict:
     try:
         for _ in range(MAX_REDIRECTS + 1):
             print("URL: ", current)
-            with requests.get(
-                current,
-                timeout=REQUEST_TIMEOUT,
-                allow_redirects=False,
-                stream=True,
-                headers=headers,
-            ) as resp:
+            with _upstream_request(current, headers) as resp:
                 if resp.is_redirect or resp.status_code in (301, 302, 303, 307, 308):
                     location = resp.headers.get("Location")
                     if not location:
